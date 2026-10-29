@@ -29,7 +29,7 @@
 # amd64: Google ships no Linux arm64 build-tools, so aapt2 and zipalign are
 # x86-64 ELF regardless of host. On Apple Silicon this runs under emulation.
 ARG TARGETPLATFORM=linux/amd64
-FROM --platform=linux/amd64 eclipse-temurin:17-jdk-jammy
+FROM --platform=linux/amd64 eclipse-temurin:17-jdk-noble
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 

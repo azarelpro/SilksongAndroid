@@ -45,6 +45,18 @@ object NativeBuild {
     fun isPresent(root: File): Boolean = output(root).length() > 0
 
     /**
+     * Installs an already-built library to where the engine loads it from,
+     * without compiling. Used when a finished libil2cpp.so was supplied (for
+     * example, transferred from a faster machine) rather than produced by
+     * this run.
+     */
+    fun install(root: File, engineDir: File) {
+        val built = output(root)
+        if (built.length() <= 0) throw IOException("no libil2cpp.so to install")
+        installTo(built, File(engineDir, built.name))
+    }
+
+    /**
      * Roughly how many objects the build produces, for the progress bar.
      *
      * Only used to turn a count into a fraction; being wrong makes the bar

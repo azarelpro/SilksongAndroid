@@ -1012,30 +1012,53 @@ class SetupActivity : Activity() {
 
                 // ── Step 3: building ──────────────────────────────────────
                 setStep(buildStep, "Building Silksong")
-                if (!PackageCompiler.isPresent(out)) {
-                    PackageCompiler.compile(unity, depot, this@SetupActivity, out).collect { setBusy(true, it.step, it.fraction, it.detail) }
-                }
-                // Always rebuilt: these are ours and change with the app, and
-                // they are a few seconds to compile.
-                // Ordered before the patches deliberately, as an experiment
-                // turned permanent: see below.
-                PackageCompiler.compileIo(unity, depot, this@SetupActivity, out, assets)
-                    .collect { setBusy(true, it.step, it.fraction, it.detail) }
-                PackageCompiler.compilePatches(unity, depot, this@SetupActivity, out, assets)
-                    .collect { setBusy(true, it.step, it.fraction, it.detail) }
-                // The BepInEx shims, on the same terms and for the same
-                // reason: they are ours, they change with the app, and they
-                // have to be compiled against the user's own depot.
-                PackageCompiler.compileShims(unity, depot, this@SetupActivity, out, assets)
-                    .collect { setBusy(true, it.step, it.fraction, it.detail) }
-                val mods = Mods.dir(this@SetupActivity)
-                withContext(Dispatchers.IO) { Mods.ensure(mods) }
-                if (!Il2cppConverter.isPresent(out) || Il2cppConverter.isStale(out, mods, assets)) {
-                    Il2cppConverter.convert(unity, depot, this@SetupActivity, out, mods, assets)
+                // A prebuilt engine copied in from a faster machine: the
+                // compiled libil2cpp.so, the conversion's metadata and the
+                // staged assemblies are all already present, so the expensive
+                // conversion and native compile are skipped. Only installing
+                // the engine and building the player image remain.
+                val prebuilt = NativeBuild.isPresent(out) &&
+                    Il2cppConverter.metadata(out).isFile &&
+                    File(Il2cppConverter.asmDir(out), PackageCompiler.patchAssembly(out).name).isFile &&
+                    PackageCompiler.shimAssemblies(out).all { File(Il2cppConverter.asmDir(out), it.name).isFile }
+                LauncherLog.log("prebuilt check: present=${NativeBuild.isPresent(out)} meta=${Il2cppConverter.metadata(out).isFile} patches=${File(Il2cppConverter.asmDir(out), PackageCompiler.patchAssembly(out).name).isFile} shims=${PackageCompiler.shimAssemblies(out).all { File(Il2cppConverter.asmDir(out), it.name).isFile }}")
+                if (prebuilt) {
+                    val mods = Mods.dir(this@SetupActivity)
+                    withContext(Dispatchers.IO) {
+                        Mods.ensure(mods)
+                        // The conversion is not run, so write the mod records
+                        // it would have left -- the same empty-folder
+                        // fingerprint markConverted produces for no plugins.
+                        Mods.markConverted(out, Mods.snapshot(mods, assets), emptyList<Mods.Plugin>())
+                    }
+                    setBusy(true, "Installing the engine", -1f, "")
+                    withContext(Dispatchers.IO) { NativeBuild.install(out, engineDir) }
+                } else {
+                    if (!PackageCompiler.isPresent(out)) {
+                        PackageCompiler.compile(unity, depot, this@SetupActivity, out).collect { setBusy(true, it.step, it.fraction, it.detail) }
+                    }
+                    // Always rebuilt: these are ours and change with the app, and
+                    // they are a few seconds to compile.
+                    // Ordered before the patches deliberately, as an experiment
+                    // turned permanent: see below.
+                    PackageCompiler.compileIo(unity, depot, this@SetupActivity, out, assets)
+                        .collect { setBusy(true, it.step, it.fraction, it.detail) }
+                    PackageCompiler.compilePatches(unity, depot, this@SetupActivity, out, assets)
+                        .collect { setBusy(true, it.step, it.fraction, it.detail) }
+                    // The BepInEx shims, on the same terms and for the same
+                    // reason: they are ours, they change with the app, and they
+                    // have to be compiled against the user's own depot.
+                    PackageCompiler.compileShims(unity, depot, this@SetupActivity, out, assets)
+                        .collect { setBusy(true, it.step, it.fraction, it.detail) }
+                    val mods = Mods.dir(this@SetupActivity)
+                    withContext(Dispatchers.IO) { Mods.ensure(mods) }
+                    if (!Il2cppConverter.isPresent(out) || Il2cppConverter.isStale(out, mods, assets)) {
+                        Il2cppConverter.convert(unity, depot, this@SetupActivity, out, mods, assets)
+                            .collect { setBusy(true, it.step, it.fraction, it.detail) }
+                    }
+                    NativeBuild.build(unity, tools, out, assets, install = engineDir)
                         .collect { setBusy(true, it.step, it.fraction, it.detail) }
                 }
-                NativeBuild.build(unity, tools, out, assets, install = engineDir)
-                    .collect { setBusy(true, it.step, it.fraction, it.detail) }
                 // Both of these are skipped when the image already matches
                 // what they would produce, which is every build where the
                 // conversion had nothing to do. Together they are a full
